@@ -162,22 +162,6 @@ async function createTempRoom(member, lobbyChannel) {
     // Register the room
     tempRooms.set(room.id, { ownerId: member.id, guildId: guild.id });
 
-    // DM the owner with their controls
-    member.user
-      .send(
-        `☕ **Ta table est prête !** \`${room.name}\`\n\n` +
-          `Voici tes commandes :\n` +
-          `\`!vr name <nouveau nom>\` — renommer la table\n` +
-          `\`!vr limit <0-99>\` — limiter le nombre de places (0 = illimité)\n` +
-          `\`!vr lock\` — verrouiller (personne peut rejoindre)\n` +
-          `\`!vr unlock\` — déverrouiller\n` +
-          `\`!vr kick @user\` — expulser quelqu'un\n` +
-          `\`!vr transfer @user\` — transférer la propriété\n` +
-          `\`!vr close\` — fermer la table maintenant\n\n` +
-          `La table sera **supprimée automatiquement** quand elle sera vide.`
-      )
-      .catch(() => {}); // user may have DMs closed
-
     // Log
     if (features.logs) {
       sendLog(guild, {
