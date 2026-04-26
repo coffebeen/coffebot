@@ -767,7 +767,7 @@ client.on("messageCreate", async (message) => {
       const reply = res.choices[0].message.content;
       await message.reply(reply.slice(0, 2000));
     } catch (err) {
-      console.error(err);
+      console.error("OpenAI Error:", err);
       await message.reply("ya bro njmch na7ki 😭 Openai sakrou 3leya eserveur");
     }
     return;
