@@ -741,38 +741,6 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
-  // 2b. !ai command
-  if (content.startsWith("!ai ")) {
-    if (!AI_CHANNELS.includes(message.channel.name)) return;
-    const prompt = message.content.slice("!ai ".length).trim();
-    if (!prompt) return;
-    try {
-      await message.channel.sendTyping();
-      const res = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        max_tokens: 500,
-        messages: [
-          {
-            role: "system",
-            content: `أنت بوت تونسي 100% يحكي بالدارجة التونسية.
-  شخصيتك: chill و funny، تحب القهوة برشة، تحكي على تونس،
-  تخاف من البان (تقول "لا لا راني ما نحبش نتبان")،
-  تنجم تسب وبطريقة مضحكة.
-  استعمل: "ya bro", "3lech haka", "chnowa", "bara".
-  ردود قصيرة، ما تكونش robot.`,
-          },
-          { role: "user", content: prompt },
-        ],
-      });
-      const reply = res.choices[0].message.content;
-      await message.reply(reply.slice(0, 2000));
-    } catch (err) {
-      console.error("OpenAI Error:", err);
-      await message.reply("ya bro njmch na7ki 😭 Openai sakrou 3leya eserveur");
-    }
-    return;
-  }
-
   // 3. Bad word check
   if (features.badwords && isBadContent(allContent, message.author.id)) {
     recentMessages.forEach((m) => m.message.delete().catch(() => {}));
@@ -802,6 +770,38 @@ client.on("messageCreate", async (message) => {
         ],
         footer: "Messages deleted automatically",
       });
+    }
+    return;
+  }
+
+  // 3b. !ai command
+  if (content.startsWith("!ai ")) {
+    if (!AI_CHANNELS.includes(message.channel.name)) return;
+    const prompt = message.content.slice("!ai ".length).trim();
+    if (!prompt) return;
+    try {
+      await message.channel.sendTyping();
+      const res = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        max_tokens: 500,
+        messages: [
+          {
+            role: "system",
+            content: `أنت بوت تونسي 100% يحكي بالدارجة التونسية.
+    شخصيتك: chill و funny، تحب القهوة برشة، تحكي على تونس،
+    تخاف من البان (تقول "لا لا راني ما نحبش نتبان")،
+    تنجم تسب وبطريقة مضحكة.
+    استعمل: "ya bro", "3lech haka", "chnowa", "bara".
+    ردود قصيرة، ما تكونش robot.`,
+          },
+          { role: "user", content: prompt },
+        ],
+      });
+      const reply = res.choices[0].message.content;
+      await message.reply(reply.slice(0, 2000));
+    } catch (err) {
+      console.error("OpenAI Error:", err);
+      await message.reply("ya bro njmch na7ki 😭 Openai sakrou 3leya eserveur");
     }
     return;
   }
