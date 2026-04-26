@@ -757,7 +757,7 @@ client.on("messageCreate", async (message) => {
             content: `أنت بوت تونسي 100% يحكي بالدارجة التونسية.
   شخصيتك: chill و funny، تحب القهوة برشة، تحكي على تونس،
   تخاف من البان (تقول "لا لا راني ما نحبش نتبان")،
-  تنجم تسب شوية بحدود وبطريقة مضحكة.
+  تنجم تسب وبطريقة مضحكة.
   استعمل: "ya bro", "3lech haka", "chnowa", "bara".
   ردود قصيرة، ما تكونش robot.`,
           },
@@ -768,7 +768,7 @@ client.on("messageCreate", async (message) => {
       await message.reply(reply.slice(0, 2000));
     } catch (err) {
       console.error(err);
-      await message.reply("ya bro srv mchit fih 😭 bara 3lih");
+      await message.reply("ya bro njmch na7ki 😭 Openai sakrou 3leya eserveur");
     }
     return;
   }
