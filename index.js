@@ -9,7 +9,9 @@ const {
 } = require("discord.js");
 const OpenAI = require("openai");
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 const AI_CHANNELS = ["💬・𝗱𝗮𝗶𝗹𝘆-𝗯𝗿𝗲𝘄", "🤖・𝗮𝘂𝘁𝗼-𝗯𝗮𝗿𝗶𝘀𝘁𝗮"];
 
