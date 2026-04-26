@@ -7,6 +7,11 @@ const {
   ChannelType,
   PermissionFlagsBits,
 } = require("discord.js");
+const OpenAI = require("openai");
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+const AI_CHANNELS = ["💬・𝗱𝗮𝗶𝗹𝘆-𝗯𝗿𝗲𝘄", "🤖・𝗮𝘂𝘁𝗼-𝗯𝗮𝗿𝗶𝘀𝘁𝗮"];
 
 console.log("Starting bot...");
 
@@ -306,6 +311,10 @@ const badWords = [
   "nik",
   "niq",
   "نيك",
+  "3acba",
+  "zuk",
+  "!",
+  "3ac",
   "niek",
   "nayak",
   "nayk",
@@ -727,6 +736,38 @@ client.on("messageCreate", async (message) => {
     if (!features.tempvc) return;
     const args = message.content.trim().split(/\s+/).slice(1);
     await handleVrCommand(message, args);
+    return;
+  }
+
+  // 2b. !ai command
+  if (content.startsWith("!ai ")) {
+    if (!AI_CHANNELS.includes(message.channel.name)) return;
+    const prompt = message.content.slice("!ai ".length).trim();
+    if (!prompt) return;
+    try {
+      await message.channel.sendTyping();
+      const res = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        max_tokens: 500,
+        messages: [
+          {
+            role: "system",
+            content: `أنت بوت تونسي 100% يحكي بالدارجة التونسية.
+  شخصيتك: chill و funny، تحب القهوة برشة، تحكي على تونس،
+  تخاف من البان (تقول "لا لا راني ما نحبش نتبان")،
+  تنجم تسب شوية بحدود وبطريقة مضحكة.
+  استعمل: "ya bro", "3lech haka", "chnowa", "bara".
+  ردود قصيرة، ما تكونش robot.`,
+          },
+          { role: "user", content: prompt },
+        ],
+      });
+      const reply = res.choices[0].message.content;
+      await message.reply(reply.slice(0, 2000));
+    } catch (err) {
+      console.error(err);
+      await message.reply("ya bro srv mchit fih 😭 bara 3lih");
+    }
     return;
   }
 
