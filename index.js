@@ -9,11 +9,16 @@ const {
 } = require("discord.js");
 const OpenAI = require("openai");
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const AI_CHANNELS = ["💬・𝗱𝗮𝗶𝗹𝘆-𝗯𝗿𝗲𝘄", "🤖・𝗮𝘂𝘁𝗼-𝗯𝗮𝗿𝗶𝘀𝘁𝗮"];
+
+// ─── ⚙️ PUT YOUR ROLE ID HERE ────────────────────────────────────────────────
+// How to get it:
+//   1. Enable Developer Mode → Discord Settings → Advanced → Developer Mode ON
+//   2. Server Settings → Roles → right-click "🌱 Fresh Bean" → Copy Role ID
+const AUTOROLE_ID = "YOUR_ROLE_ID_HERE";
+// ─────────────────────────────────────────────────────────────────────────────
 
 console.log("Starting bot...");
 
@@ -24,7 +29,7 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildModeration,
-    GatewayIntentBits.GuildVoiceStates, // needed for VC events
+    GatewayIntentBits.GuildVoiceStates,
   ],
 });
 
@@ -54,9 +59,7 @@ function timestamp() {
 const LOG_CHANNEL_NAME = "📊・brew-logs";
 
 function getLogChannel(guild) {
-  return (
-    guild.channels.cache.find((ch) => ch.name === LOG_CHANNEL_NAME) || null
-  );
+  return guild.channels.cache.find((ch) => ch.name === LOG_CHANNEL_NAME) || null;
 }
 
 async function sendLog(guild, { color, emoji, title, fields, footer }) {
@@ -72,18 +75,18 @@ async function sendLog(guild, { color, emoji, title, fields, footer }) {
 }
 
 const Colors = {
-  join: "#57F287",
-  leave: "#ED4245",
-  rename: "#FEE75C",
-  ban: "#FF0000",
-  kick: "#E67E22",
-  mute: "#9B59B6",
-  delete: "#E74C3C",
-  edit: "#3498DB",
-  spam: "#FF6B35",
+  join:    "#57F287",
+  leave:   "#ED4245",
+  rename:  "#FEE75C",
+  ban:     "#FF0000",
+  kick:    "#E67E22",
+  mute:    "#9B59B6",
+  delete:  "#E74C3C",
+  edit:    "#3498DB",
+  spam:    "#FF6B35",
   badword: "#C0392B",
-  bulk: "#95A5A6",
-  vc: "#5865F2",
+  bulk:    "#95A5A6",
+  vc:      "#5865F2",
 };
 
 // ─── Config ──────────────────────────────────────────────────────────────────
@@ -93,97 +96,48 @@ const ALLOWED_ROLES = [OWNER_ROLE_ID];
 
 const features = {
   badwords: true,
-  spam: true,
+  spam:     true,
   triggers: true,
-  welcome: true,
+  welcome:  true,
   mentions: true,
-  logs: true,
-  tempvc: true, // toggle temp VC system on/off
+  logs:     true,
+  tempvc:   true,
 };
 
 // ─── Temp VC System ───────────────────────────────────────────────────────────
-//
-// Setup needed in your Discord server:
-//   1. Create a Category  →  name it whatever you like (e.g. "☕ Tables")
-//   2. Inside that category create ONE Voice Channel → name it exactly:
-//        ➕ Reserve a Table
-//   When someone joins that lobby channel the bot will:
-//     • Create a new VC in the same category named "🎙️ {username}'s Table"
-//     • Move them into it
-//     • Give them full control over that channel (manage, mute, etc.)
-//     • Send them a DM with all the commands
-//   The room is deleted automatically the moment it becomes empty.
-//
-// Owner commands (send as a normal message in ANY channel while you own a room):
-//   !vr name <new name>      — rename your room
-//   !vr limit <0-99>         — set user limit (0 = unlimited)
-//   !vr lock                 — lock the room (nobody new can join)
-//   !vr unlock               — unlock the room
-//   !vr kick @user           — kick a user from your room
-//   !vr transfer @user       — transfer ownership to another member in the room
-//   !vr close                — close / delete the room immediately
 
 const LOBBY_CHANNEL_NAME = "➕ Reserve a Table";
-
-// Map of channelId → { ownerId, guildId }
-const tempRooms = new Map();
+const tempRooms = new Map(); // channelId → { ownerId, guildId }
 
 async function createTempRoom(member, lobbyChannel) {
   const guild = member.guild;
   const category = lobbyChannel.parent;
-
   try {
-    // Create the VC in the same category as the lobby
     const room = await guild.channels.create({
       name: `🎙️ ${member.user.username}'s Table`,
       type: ChannelType.GuildVoice,
       parent: category,
       permissionOverwrites: [
-        // Bot needs to be able to manage this channel
         {
           id: guild.members.me.id,
-          allow: [
-            PermissionFlagsBits.ManageChannels,
-            PermissionFlagsBits.MoveMembers,
-            PermissionFlagsBits.MuteMembers,
-          ],
+          allow: [PermissionFlagsBits.ManageChannels, PermissionFlagsBits.MoveMembers, PermissionFlagsBits.MuteMembers],
         },
-        // Owner gets full control
         {
           id: member.id,
-          allow: [
-            PermissionFlagsBits.ManageChannels,
-            PermissionFlagsBits.MoveMembers,
-            PermissionFlagsBits.MuteMembers,
-            PermissionFlagsBits.DeafenMembers,
-            PermissionFlagsBits.Connect,
-            PermissionFlagsBits.Speak,
-          ],
+          allow: [PermissionFlagsBits.ManageChannels, PermissionFlagsBits.MoveMembers, PermissionFlagsBits.MuteMembers, PermissionFlagsBits.DeafenMembers, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak],
         },
       ],
     });
-
-    // Move the member into their new room
     await member.voice.setChannel(room);
-
-    // Register the room
     tempRooms.set(room.id, { ownerId: member.id, guildId: guild.id });
-
-    // Log
     if (features.logs) {
       sendLog(guild, {
-        color: Colors.vc,
-        emoji: "🎙️",
-        title: "Temp Room Created",
+        color: Colors.vc, emoji: "🎙️", title: "Temp Room Created",
         fields: [
-          {
-            name: "Owner",
-            value: `${member.user} (${member.user.tag})`,
-            inline: true,
-          },
-          { name: "Room", value: room.name, inline: true },
+          { name: "Owner",    value: `${member.user} (${member.user.tag})`, inline: true },
+          { name: "Room",     value: room.name, inline: true },
           { name: "Category", value: category?.name || "None", inline: true },
-          { name: "Time", value: timestamp(), inline: true },
+          { name: "Time",     value: timestamp(), inline: true },
         ],
       });
     }
@@ -195,39 +149,26 @@ async function createTempRoom(member, lobbyChannel) {
 async function deleteTempRoom(channel) {
   const info = tempRooms.get(channel.id);
   tempRooms.delete(channel.id);
-
   if (features.logs && info) {
     sendLog(channel.guild, {
-      color: Colors.vc,
-      emoji: "🗑️",
-      title: "Temp Room Deleted (empty)",
+      color: Colors.vc, emoji: "🗑️", title: "Temp Room Deleted (empty)",
       fields: [
         { name: "Room", value: channel.name, inline: true },
         { name: "Time", value: timestamp(), inline: true },
       ],
     });
   }
-
   channel.delete().catch(() => {});
 }
 
-// ─── Voice State Update (lobby join / room empty) ─────────────────────────────
-
 client.on("voiceStateUpdate", async (oldState, newState) => {
   if (!features.tempvc) return;
-
   const guild = newState.guild || oldState.guild;
-
-  // ── Someone joined the lobby → create their room
   if (newState.channel?.name === LOBBY_CHANNEL_NAME) {
     await createTempRoom(newState.member, newState.channel);
   }
-
-  // ── Someone left a temp room → delete if empty
   if (oldState.channel && tempRooms.has(oldState.channel.id)) {
-    const room = oldState.channel;
-    // Re-fetch to get accurate member count
-    const freshRoom = guild.channels.cache.get(room.id);
+    const freshRoom = guild.channels.cache.get(oldState.channel.id);
     if (freshRoom && freshRoom.members.size === 0) {
       await deleteTempRoom(freshRoom);
     }
@@ -237,9 +178,9 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
 // ─── Spam Detection ──────────────────────────────────────────────────────────
 
 const spamHistory = new Map();
-const SPAM_WINDOW = 10 * 1000;
-const SPAM_LIMIT = 5;
-const REPEAT_LIMIT = 3;
+const SPAM_WINDOW   = 10 * 1000;
+const SPAM_LIMIT    = 5;
+const REPEAT_LIMIT  = 3;
 const MENTION_LIMIT = 3;
 
 setInterval(() => {
@@ -255,24 +196,12 @@ function checkSpam(userId, normalizedContent, message) {
   const now = Date.now();
   if (!spamHistory.has(userId)) spamHistory.set(userId, []);
   const history = spamHistory.get(userId);
-  history.push({
-    content: normalizedContent,
-    time: now,
-    message,
-    mentions: message.mentions.users.size,
-  });
+  history.push({ content: normalizedContent, time: now, message, mentions: message.mentions.users.size });
   const recent = history.filter((m) => now - m.time < SPAM_WINDOW);
   spamHistory.set(userId, recent);
   if (recent.length > SPAM_LIMIT) return true;
-  if (
-    recent.filter((m) => m.content === normalizedContent).length > REPEAT_LIMIT
-  )
-    return true;
-  if (
-    features.mentions &&
-    recent.reduce((sum, m) => sum + m.mentions, 0) > MENTION_LIMIT
-  )
-    return true;
+  if (recent.filter((m) => m.content === normalizedContent).length > REPEAT_LIMIT) return true;
+  if (features.mentions && recent.reduce((sum, m) => sum + m.mentions, 0) > MENTION_LIMIT) return true;
   return false;
 }
 
@@ -291,113 +220,19 @@ setInterval(() => {
 }, 60 * 1000);
 
 const badWords = [
-  "zebi",
-  "zeb",
-  "زب",
-  "zbi",
-  "zb",
-  "zk",
-  "zab",
-  "zby",
-  "zaby",
-  "zeby",
-  "3asba",
-  "3siba",
-  "عصب",
-  "97ayba",
-  "9o7b",
-  "عصبة",
-  "3asb",
-  "3sb",
-  "asba",
-  "nik",
-  "niq",
-  "نيك",
-  "3acba",
-  "zuk",
-  "!",
-  "3ac",
-  "niek",
-  "nayak",
-  "nayk",
-  "nyk",
-  "neyek",
-  "نايك",
-  "nayek",
-  "naik",
-  "manyouk",
-  "tnaket",
-  "monaka",
-  "mounaka",
-  "kaboul",
-  "nek",
-  "sorm",
-  "سرم",
-  "zok",
-  "زك",
-  "zokek",
-  "omk",
-  "أمك",
-  "omek",
-  "omou",
-  "امك",
-  "امو",
-  "أمو",
-  "zabour",
-  "زبور",
-  "zbar",
-  "زبر",
-  "9a7ba",
-  "قحب",
-  "97iba",
-  "قحيب",
-  "9a7bet",
-  "قحبا",
-  "97ab",
-  "قحاب",
-  "9a7boun",
-  "قحبون",
-  "9a7bt",
-  "suck ma dick",
-  "mibon",
-  "wabna",
-  "wapna",
-  "wbna",
-  "wpna",
-  "ميبون",
-  "مبن",
-  "ميبن",
-  "مبون",
-  "وبن",
-  "miboun",
-  "mipoun",
-  "mipon",
-  "y3aseb",
-  "3asabet",
-  "termtek",
-  "ترم",
-  "termtec",
-  "termteq",
-  "termtk",
-  "termtc",
-  "termtq",
-  "terma",
-  "ba3bes",
-  "بعبس",
-  "kos",
-  "كس",
-  "بعباس",
-  "بعبص",
-  "بعباص",
-  "ba3bas",
-  "bazoul",
-  "بزول",
-  "بزازل",
-  "bzazel",
-  "bzoul",
-  "bazol",
-  "bezoul",
-  "bezol",
+  "zebi", "zeb", "زب", "zbi", "zb", "zk", "zab", "zby", "zaby", "zeby",
+  "3asba", "3siba", "عصب", "97ayba", "9o7b", "عصبة", "3asb", "3sb", "asba",
+  "nik", "niq", "نيك", "3acba", "zuk", "3ac",
+  "niek", "nayak", "nayk", "nyk", "neyek", "نايك", "nayek", "naik",
+  "manyouk", "tnaket", "monaka", "mounaka", "kaboul", "nek", "sorm", "سرم",
+  "zok", "زك", "zokek", "omk", "أمك", "omek", "omou", "امك", "امو", "أمو",
+  "zabour", "زبور", "zbar", "زبر", "9a7ba", "قحب", "97iba", "قحيب",
+  "9a7bet", "قحبا", "97ab", "قحاب", "9a7boun", "قحبون", "9a7bt",
+  "suck ma dick", "mibon", "wabna", "wapna", "wbna", "wpna", "ميبون", "مبن",
+  "ميبن", "مبون", "وبن", "miboun", "mipoun", "mipon", "y3aseb", "3asabet",
+  "termtek", "ترم", "termtec", "termteq", "termtk", "termtc", "termtq",
+  "terma", "ba3bes", "بعبس", "kos", "كس", "بعباس", "بعبص", "بعباص", "ba3bas",
+  "bazoul", "بزول", "بزازل", "bzazel", "bzoul", "bazol", "bezoul", "bezol",
 ];
 
 const emojiWords = ["🖕"];
@@ -416,12 +251,7 @@ function getRecentMessages(userId, newMessage) {
 
 function isBadContent(content, userId) {
   const normalized = normalize(content);
-  const combined = normalize(
-    userMessageHistory
-      .get(userId)
-      ?.map((m) => m.content)
-      .join("") || ""
-  );
+  const combined = normalize(userMessageHistory.get(userId)?.map((m) => m.content).join("") || "");
   return (
     badWords.some((w) => normalized.includes(w) || combined.includes(w)) ||
     emojiWords.some((e) => content.includes(e))
@@ -438,262 +268,103 @@ function hasPermission(member) {
 
 const triggers = [
   { words: ["hello", "hey", "hi", "salam", "ahla"], reply: "ahla!" },
-  {
-    words: ["bye", "ciao", "bay", "nemchi", "ala5i", "3ala5ir"],
-    reply: "besslema!",
-  },
+  { words: ["bye", "ciao", "bay", "nemchi", "ala5i", "3ala5ir"], reply: "besslema!" },
 ];
 
 // ─── !vr Command Handler ──────────────────────────────────────────────────────
 
 async function handleVrCommand(message, args) {
   const sub = args[0]?.toLowerCase();
-
-  // Find which temp room this user owns
   const ownedRoomId = [...tempRooms.entries()].find(
-    ([, info]) =>
-      info.ownerId === message.author.id && info.guildId === message.guild.id
+    ([, info]) => info.ownerId === message.author.id && info.guildId === message.guild.id
   )?.[0];
 
   if (!ownedRoomId) {
-    return message
-      .reply("ma3andekch table ! dkhol ➕ Reserve a Table bch tchoub wahda.")
+    return message.reply("ma3andekch table ! dkhol ➕ Reserve a Table bch tchoub wahda.")
       .then((m) => setTimeout(() => m.delete(), 5000));
   }
 
   const room = message.guild.channels.cache.get(ownedRoomId);
   if (!room) {
     tempRooms.delete(ownedRoomId);
-    return message
-      .reply("ta table mazaletch mawjouda.")
-      .then((m) => setTimeout(() => m.delete(), 5000));
+    return message.reply("ta table mazaletch mawjouda.").then((m) => setTimeout(() => m.delete(), 5000));
   }
 
-  // ── rename
   if (sub === "name") {
     const newName = args.slice(1).join(" ").trim();
-    if (!newName)
-      return message
-        .reply("ekteb ism jdid. ex: `!vr name Gaming Night`")
-        .then((m) => setTimeout(() => m.delete(), 5000));
+    if (!newName) return message.reply("ekteb ism jdid. ex: `!vr name Gaming Night`").then((m) => setTimeout(() => m.delete(), 5000));
     await room.setName(newName).catch(() => {});
-    message
-      .reply(`✅ table renamed to **${newName}**`)
-      .then((m) => setTimeout(() => m.delete(), 5000));
-    if (features.logs)
-      sendLog(message.guild, {
-        color: Colors.vc,
-        emoji: "✏️",
-        title: "Temp Room Renamed",
-        fields: [
-          { name: "Owner", value: `${message.author.tag}`, inline: true },
-          { name: "New Name", value: newName, inline: true },
-          { name: "Time", value: timestamp(), inline: true },
-        ],
-      });
+    message.reply(`✅ table renamed to **${newName}**`).then((m) => setTimeout(() => m.delete(), 5000));
+    if (features.logs) sendLog(message.guild, { color: Colors.vc, emoji: "✏️", title: "Temp Room Renamed", fields: [{ name: "Owner", value: message.author.tag, inline: true }, { name: "New Name", value: newName, inline: true }, { name: "Time", value: timestamp(), inline: true }] });
     return;
   }
 
-  // ── limit
   if (sub === "limit") {
     const limit = parseInt(args[1]);
-    if (isNaN(limit) || limit < 0 || limit > 99)
-      return message
-        .reply("el limit lazem ykon bin 0 w 99 (0 = unlimited).")
-        .then((m) => setTimeout(() => m.delete(), 5000));
+    if (isNaN(limit) || limit < 0 || limit > 99) return message.reply("el limit lazem ykon bin 0 w 99 (0 = unlimited).").then((m) => setTimeout(() => m.delete(), 5000));
     await room.setUserLimit(limit).catch(() => {});
-    message
-      .reply(`✅ limit set to **${limit === 0 ? "unlimited" : limit}**`)
-      .then((m) => setTimeout(() => m.delete(), 5000));
+    message.reply(`✅ limit set to **${limit === 0 ? "unlimited" : limit}**`).then((m) => setTimeout(() => m.delete(), 5000));
     return;
   }
 
-  // ── lock
   if (sub === "lock") {
-    await room.permissionOverwrites
-      .edit(message.guild.roles.everyone, { Connect: false })
-      .catch(() => {});
-    message
-      .reply("🔒 table locked — no new members can join.")
-      .then((m) => setTimeout(() => m.delete(), 5000));
-    if (features.logs)
-      sendLog(message.guild, {
-        color: Colors.vc,
-        emoji: "🔒",
-        title: "Temp Room Locked",
-        fields: [
-          { name: "Owner", value: message.author.tag, inline: true },
-          { name: "Room", value: room.name, inline: true },
-          { name: "Time", value: timestamp(), inline: true },
-        ],
-      });
+    await room.permissionOverwrites.edit(message.guild.roles.everyone, { Connect: false }).catch(() => {});
+    message.reply("🔒 table locked — no new members can join.").then((m) => setTimeout(() => m.delete(), 5000));
+    if (features.logs) sendLog(message.guild, { color: Colors.vc, emoji: "🔒", title: "Temp Room Locked", fields: [{ name: "Owner", value: message.author.tag, inline: true }, { name: "Room", value: room.name, inline: true }, { name: "Time", value: timestamp(), inline: true }] });
     return;
   }
 
-  // ── unlock
   if (sub === "unlock") {
-    await room.permissionOverwrites
-      .edit(message.guild.roles.everyone, { Connect: null })
-      .catch(() => {});
-    message
-      .reply("🔓 table unlocked — everyone can join again.")
-      .then((m) => setTimeout(() => m.delete(), 5000));
-    if (features.logs)
-      sendLog(message.guild, {
-        color: Colors.vc,
-        emoji: "🔓",
-        title: "Temp Room Unlocked",
-        fields: [
-          { name: "Owner", value: message.author.tag, inline: true },
-          { name: "Room", value: room.name, inline: true },
-          { name: "Time", value: timestamp(), inline: true },
-        ],
-      });
+    await room.permissionOverwrites.edit(message.guild.roles.everyone, { Connect: null }).catch(() => {});
+    message.reply("🔓 table unlocked — everyone can join again.").then((m) => setTimeout(() => m.delete(), 5000));
+    if (features.logs) sendLog(message.guild, { color: Colors.vc, emoji: "🔓", title: "Temp Room Unlocked", fields: [{ name: "Owner", value: message.author.tag, inline: true }, { name: "Room", value: room.name, inline: true }, { name: "Time", value: timestamp(), inline: true }] });
     return;
   }
 
-  // ── kick
   if (sub === "kick") {
     const target = message.mentions.members.first();
-    if (!target)
-      return message
-        .reply("mentionni el user li tbi tkick. ex: `!vr kick @user`")
-        .then((m) => setTimeout(() => m.delete(), 5000));
-    if (target.id === message.author.id)
-      return message
-        .reply("ma9derch tekick rou7ek 😅")
-        .then((m) => setTimeout(() => m.delete(), 5000));
-    if (target.voice?.channelId !== room.id)
-      return message
-        .reply("el user moch fi ta table.")
-        .then((m) => setTimeout(() => m.delete(), 5000));
-
-    // Move them to the lobby channel or disconnect them
-    const lobby = message.guild.channels.cache.find(
-      (ch) => ch.name === LOBBY_CHANNEL_NAME
-    );
-    if (lobby) {
-      await target.voice.setChannel(lobby).catch(() => {});
-    } else {
-      await target.voice.disconnect().catch(() => {});
-    }
-    message
-      .reply(`✅ **${target.user.tag}** has been kicked from your table.`)
-      .then((m) => setTimeout(() => m.delete(), 5000));
-    if (features.logs)
-      sendLog(message.guild, {
-        color: Colors.kick,
-        emoji: "👢",
-        title: "Kicked from Temp Room",
-        fields: [
-          { name: "Owner", value: message.author.tag, inline: true },
-          { name: "Kicked", value: target.user.tag, inline: true },
-          { name: "Room", value: room.name, inline: true },
-          { name: "Time", value: timestamp(), inline: true },
-        ],
-      });
+    if (!target) return message.reply("mentionni el user li tbi tkick. ex: `!vr kick @user`").then((m) => setTimeout(() => m.delete(), 5000));
+    if (target.id === message.author.id) return message.reply("ma9derch tekick rou7ek 😅").then((m) => setTimeout(() => m.delete(), 5000));
+    if (target.voice?.channelId !== room.id) return message.reply("el user moch fi ta table.").then((m) => setTimeout(() => m.delete(), 5000));
+    const lobby = message.guild.channels.cache.find((ch) => ch.name === LOBBY_CHANNEL_NAME);
+    if (lobby) await target.voice.setChannel(lobby).catch(() => {});
+    else await target.voice.disconnect().catch(() => {});
+    message.reply(`✅ **${target.user.tag}** has been kicked from your table.`).then((m) => setTimeout(() => m.delete(), 5000));
+    if (features.logs) sendLog(message.guild, { color: Colors.kick, emoji: "👢", title: "Kicked from Temp Room", fields: [{ name: "Owner", value: message.author.tag, inline: true }, { name: "Kicked", value: target.user.tag, inline: true }, { name: "Room", value: room.name, inline: true }, { name: "Time", value: timestamp(), inline: true }] });
     return;
   }
 
-  // ── transfer
   if (sub === "transfer") {
     const target = message.mentions.members.first();
-    if (!target)
-      return message
-        .reply(
-          "mentionni el user li tbi t3tih el table. ex: `!vr transfer @user`"
-        )
-        .then((m) => setTimeout(() => m.delete(), 5000));
-    if (target.id === message.author.id)
-      return message
-        .reply("deja enta owner 😅")
-        .then((m) => setTimeout(() => m.delete(), 5000));
-    if (target.voice?.channelId !== room.id)
-      return message
-        .reply("el user moch fi ta table.")
-        .then((m) => setTimeout(() => m.delete(), 5000));
-
-    // Remove old owner perms, grant new owner perms
-    await room.permissionOverwrites
-      .edit(message.author.id, {
-        ManageChannels: null,
-        MoveMembers: null,
-        MuteMembers: null,
-        DeafenMembers: null,
-      })
-      .catch(() => {});
-    await room.permissionOverwrites
-      .edit(target.id, {
-        ManageChannels: true,
-        MoveMembers: true,
-        MuteMembers: true,
-        DeafenMembers: true,
-        Connect: true,
-        Speak: true,
-      })
-      .catch(() => {});
-
-    // Update registry
+    if (!target) return message.reply("mentionni el user li tbi t3tih el table. ex: `!vr transfer @user`").then((m) => setTimeout(() => m.delete(), 5000));
+    if (target.id === message.author.id) return message.reply("deja enta owner 😅").then((m) => setTimeout(() => m.delete(), 5000));
+    if (target.voice?.channelId !== room.id) return message.reply("el user moch fi ta table.").then((m) => setTimeout(() => m.delete(), 5000));
+    await room.permissionOverwrites.edit(message.author.id, { ManageChannels: null, MoveMembers: null, MuteMembers: null, DeafenMembers: null }).catch(() => {});
+    await room.permissionOverwrites.edit(target.id, { ManageChannels: true, MoveMembers: true, MuteMembers: true, DeafenMembers: true, Connect: true, Speak: true }).catch(() => {});
     tempRooms.set(room.id, { ownerId: target.id, guildId: message.guild.id });
-
-    // Rename to reflect new owner
     await room.setName(`🎙️ ${target.user.username}'s Table`).catch(() => {});
-
-    message
-      .reply(`✅ table ownership transferred to **${target.user.tag}**.`)
-      .then((m) => setTimeout(() => m.delete(), 5000));
-
-    // DM new owner
-    target.user
-      .send(
-        `☕ **${message.author.username}** a transféré sa table à toi !\n\n` +
-          `Tes commandes :\n` +
-          `\`!vr name <nom>\` — renommer\n` +
-          `\`!vr limit <0-99>\` — limiter les places\n` +
-          `\`!vr lock / unlock\` — verrouiller / déverrouiller\n` +
-          `\`!vr kick @user\` — expulser\n` +
-          `\`!vr transfer @user\` — retransférer\n` +
-          `\`!vr close\` — fermer`
-      )
-      .catch(() => {});
-
-    if (features.logs)
-      sendLog(message.guild, {
-        color: Colors.vc,
-        emoji: "🔁",
-        title: "Temp Room Ownership Transferred",
-        fields: [
-          { name: "From", value: message.author.tag, inline: true },
-          { name: "To", value: target.user.tag, inline: true },
-          { name: "Room", value: room.name, inline: true },
-          { name: "Time", value: timestamp(), inline: true },
-        ],
-      });
+    message.reply(`✅ table ownership transferred to **${target.user.tag}**.`).then((m) => setTimeout(() => m.delete(), 5000));
+    target.user.send(`☕ **${message.author.username}** a transféré sa table à toi !\n\nTes commandes :\n\`!vr name <nom>\` — renommer\n\`!vr limit <0-99>\` — limiter les places\n\`!vr lock / unlock\` — verrouiller / déverrouiller\n\`!vr kick @user\` — expulser\n\`!vr transfer @user\` — retransférer\n\`!vr close\` — fermer`).catch(() => {});
+    if (features.logs) sendLog(message.guild, { color: Colors.vc, emoji: "🔁", title: "Temp Room Ownership Transferred", fields: [{ name: "From", value: message.author.tag, inline: true }, { name: "To", value: target.user.tag, inline: true }, { name: "Room", value: room.name, inline: true }, { name: "Time", value: timestamp(), inline: true }] });
     return;
   }
 
-  // ── close
   if (sub === "close") {
-    message
-      .reply("🗑️ closing your table...")
-      .then((m) => setTimeout(() => m.delete(), 3000));
+    message.reply("🗑️ closing your table...").then((m) => setTimeout(() => m.delete(), 3000));
     await deleteTempRoom(room);
     return;
   }
 
-  // ── help / unknown sub
-  message
-    .reply(
-      `**!vr commands:**\n` +
-        `\`!vr name <nom>\` — renommer la table\n` +
-        `\`!vr limit <0-99>\` — limiter les places (0 = illimité)\n` +
-        `\`!vr lock\` — verrouiller\n` +
-        `\`!vr unlock\` — déverrouiller\n` +
-        `\`!vr kick @user\` — expulser\n` +
-        `\`!vr transfer @user\` — transférer la propriété\n` +
-        `\`!vr close\` — fermer`
-    )
-    .then((m) => setTimeout(() => m.delete(), 15000));
+  message.reply(
+    `**!vr commands:**\n` +
+    `\`!vr name <nom>\` — renommer la table\n` +
+    `\`!vr limit <0-99>\` — limiter les places (0 = illimité)\n` +
+    `\`!vr lock\` — verrouiller\n` +
+    `\`!vr unlock\` — déverrouiller\n` +
+    `\`!vr kick @user\` — expulser\n` +
+    `\`!vr transfer @user\` — transférer la propriété\n` +
+    `\`!vr close\` — fermer`
+  ).then((m) => setTimeout(() => m.delete(), 15000));
 }
 
 // ─── Message Handler ──────────────────────────────────────────────────────────
@@ -707,33 +378,27 @@ client.on("messageCreate", async (message) => {
   const normalizedContent = normalize(allContent);
   const recentMessages = getRecentMessages(message.author.id, message);
 
-  // 1. !toggle command
+  // 1. !toggle
   if (content.startsWith("!toggle")) {
     if (!hasPermission(message.member)) {
-      message
-        .reply("ma3andekch permission !")
-        .then((msg) => setTimeout(() => msg.delete(), 3000));
+      message.reply("ma3andekch permission !").then((msg) => setTimeout(() => msg.delete(), 3000));
       return;
     }
     const feature = content.split(" ")[1];
     if (!feature || !Object.prototype.hasOwnProperty.call(features, feature)) {
       message.reply(
         `features available: \`badwords\`, \`spam\`, \`triggers\`, \`welcome\`, \`mentions\`, \`logs\`, \`tempvc\`\n` +
-          `current status:\n` +
-          Object.entries(features)
-            .map(([k, v]) => `• **${k}**: ${v ? "🟢 on" : "🔴 off"}`)
-            .join("\n")
+        `current status:\n` +
+        Object.entries(features).map(([k, v]) => `• **${k}**: ${v ? "🟢 on" : "🔴 off"}`).join("\n")
       );
       return;
     }
     features[feature] = !features[feature];
-    message.reply(
-      `✅ **${feature}** is now ${features[feature] ? "🟢 on" : "🔴 off"}`
-    );
+    message.reply(`✅ **${feature}** is now ${features[feature] ? "🟢 on" : "🔴 off"}`);
     return;
   }
 
-  // 2. !vr command
+  // 2. !vr
   if (content.startsWith("!vr")) {
     if (!features.tempvc) return;
     const args = message.content.trim().split(/\s+/).slice(1);
@@ -741,32 +406,21 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
-  // 3. Bad word check
+  // 3. Bad word check — runs BEFORE !ai so the prompt can't bypass it
   if (features.badwords && isBadContent(allContent, message.author.id)) {
     recentMessages.forEach((m) => m.message.delete().catch(() => {}));
     userMessageHistory.set(message.author.id, []);
     message.channel
-      .send(
-        `${message.author}, yezi bla sabben we klam zayed , takel ban rak .`
-      )
+      .send(`${message.author}, yezi bla sabben we klam zayed , takel ban rak .`)
       .then((msg) => setTimeout(() => msg.delete(), 5000));
     if (features.logs) {
       sendLog(message.guild, {
-        color: Colors.badword,
-        emoji: "🤬",
-        title: "Bad Word Detected",
+        color: Colors.badword, emoji: "🤬", title: "Bad Word Detected",
         fields: [
-          {
-            name: "User",
-            value: `${message.author} (${message.author.tag})`,
-            inline: true,
-          },
+          { name: "User",    value: `${message.author} (${message.author.tag})`, inline: true },
           { name: "Channel", value: `${message.channel}`, inline: true },
-          {
-            name: "Content",
-            value: `\`\`\`${message.content.slice(0, 300)}\`\`\``,
-          },
-          { name: "Time", value: timestamp(), inline: true },
+          { name: "Content", value: `\`\`\`${message.content.slice(0, 300)}\`\`\`` },
+          { name: "Time",    value: timestamp(), inline: true },
         ],
         footer: "Messages deleted automatically",
       });
@@ -774,7 +428,7 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
-  // 3b. !ai command
+  // 4. !ai — bad word check already passed above
   if (content.startsWith("!ai ")) {
     if (!AI_CHANNELS.includes(message.channel.name)) return;
     const prompt = message.content.slice("!ai ".length).trim();
@@ -787,18 +441,18 @@ client.on("messageCreate", async (message) => {
         messages: [
           {
             role: "system",
-            content: `أنت بوت تونسي 100% يحكي بالدارجة التونسية.
-    شخصيتك: chill و funny، تحب القهوة برشة، تحكي على تونس،
-    تخاف من البان (تقول "لا لا راني ما نحبش نتبان")،
-    تنجم تسب وبطريقة مضحكة.
-    استعمل: "ya bro", "3lech haka", "chnowa", "bara".
-    ردود قصيرة، ما تكونش robot.`,
+            content:
+              `أنت بوت تونسي 100% يحكي بالدارجة التونسية.\n` +
+              `شخصيتك: chill و funny، تحب القهوة برشة، تحكي على تونس،\n` +
+              `تخاف من البان (تقول "لا لا راني ما نحبش نتبان")،\n` +
+              `تنجم تسب وبطريقة مضحكة.\n` +
+              `استعمل: "ya bro", "3lech haka", "chnowa", "bara".\n` +
+              `ردود قصيرة، ما تكونش robot.`,
           },
           { role: "user", content: prompt },
         ],
       });
-      const reply = res.choices[0].message.content;
-      await message.reply(reply.slice(0, 2000));
+      await message.reply(res.choices[0].message.content.slice(0, 2000));
     } catch (err) {
       console.error("OpenAI Error:", err);
       await message.reply("ya bro njmch na7ki 😭 Openai sakrou 3leya eserveur");
@@ -806,7 +460,7 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
-  // 4. Spam check
+  // 5. Spam check
   if (features.spam) {
     const isSpam = checkSpam(message.author.id, normalizedContent, message);
     if (isSpam) {
@@ -819,21 +473,12 @@ client.on("messageCreate", async (message) => {
         .then((msg) => setTimeout(() => msg.delete(), 5000));
       if (features.logs) {
         sendLog(message.guild, {
-          color: Colors.spam,
-          emoji: "🚨",
-          title: "Spam Detected",
+          color: Colors.spam, emoji: "🚨", title: "Spam Detected",
           fields: [
-            {
-              name: "User",
-              value: `${message.author} (${message.author.tag})`,
-              inline: true,
-            },
-            { name: "Channel", value: `${message.channel}`, inline: true },
-            {
-              name: "Last Message",
-              value: `\`\`\`${message.content.slice(0, 300)}\`\`\``,
-            },
-            { name: "Time", value: timestamp(), inline: true },
+            { name: "User",         value: `${message.author} (${message.author.tag})`, inline: true },
+            { name: "Channel",      value: `${message.channel}`, inline: true },
+            { name: "Last Message", value: `\`\`\`${message.content.slice(0, 300)}\`\`\`` },
+            { name: "Time",         value: timestamp(), inline: true },
           ],
           footer: "Spam messages deleted automatically",
         });
@@ -842,62 +487,39 @@ client.on("messageCreate", async (message) => {
     }
   }
 
-  // 5. !fassa5 (bulk delete)
+  // 6. !fassa5 (bulk delete)
   if (content === "!fassa5" || content.startsWith("!fassa5 ")) {
     if (!hasPermission(message.member)) {
-      message
-        .reply("ma3andekch permission !")
-        .then((msg) => setTimeout(() => msg.delete(), 3000));
+      message.reply("ma3andekch permission !").then((msg) => setTimeout(() => msg.delete(), 3000));
       return;
     }
     const args = content.split(" ");
     const amount = parseInt(args[1]) || 100;
-    if (amount < 1 || amount > 100) {
-      message.reply("el nombre lazem ykon bin 1 w 100 .");
-      return;
-    }
-    message.channel
-      .bulkDelete(amount, true)
-      .then((deleted) => {
-        const skipped = amount - deleted.size;
-        let reply = `✅ hani fassa5t ${deleted.size} messages .`;
-        if (skipped > 0)
-          reply += ` (${skipped} messages skipped — aktar men 14 days w ma9darch ndelete.)`;
-        message.channel
-          .send(reply)
-          .then((msg) => setTimeout(() => msg.delete(), 4000));
-        if (features.logs) {
-          sendLog(message.guild, {
-            color: Colors.bulk,
-            emoji: "🗑️",
-            title: "Bulk Delete (!fassa5)",
-            fields: [
-              {
-                name: "Mod",
-                value: `${message.author} (${message.author.tag})`,
-                inline: true,
-              },
-              { name: "Channel", value: `${message.channel}`, inline: true },
-              {
-                name: "Deleted",
-                value: `${deleted.size} messages`,
-                inline: true,
-              },
-              { name: "Skipped (>14d)", value: `${skipped}`, inline: true },
-              { name: "Time", value: timestamp(), inline: true },
-            ],
-          });
-        }
-      })
-      .catch((err) => console.error(err));
+    if (amount < 1 || amount > 100) { message.reply("el nombre lazem ykon bin 1 w 100 ."); return; }
+    message.channel.bulkDelete(amount, true).then((deleted) => {
+      const skipped = amount - deleted.size;
+      let reply = `✅ hani fassa5t ${deleted.size} messages .`;
+      if (skipped > 0) reply += ` (${skipped} messages skipped — aktar men 14 days w ma9darch ndelete.)`;
+      message.channel.send(reply).then((msg) => setTimeout(() => msg.delete(), 4000));
+      if (features.logs) {
+        sendLog(message.guild, {
+          color: Colors.bulk, emoji: "🗑️", title: "Bulk Delete (!fassa5)",
+          fields: [
+            { name: "Mod",            value: `${message.author} (${message.author.tag})`, inline: true },
+            { name: "Channel",        value: `${message.channel}`, inline: true },
+            { name: "Deleted",        value: `${deleted.size} messages`, inline: true },
+            { name: "Skipped (>14d)", value: `${skipped}`, inline: true },
+            { name: "Time",           value: timestamp(), inline: true },
+          ],
+        });
+      }
+    }).catch((err) => console.error(err));
     return;
   }
 
-  // 6. Keyword triggers
+  // 7. Keyword triggers
   if (features.triggers) {
-    const match = triggers.find((t) =>
-      t.words.some((w) => content.includes(w))
-    );
+    const match = triggers.find((t) => t.words.some((w) => content.includes(w)));
     if (match) message.reply(match.reply);
   }
 });
@@ -908,35 +530,16 @@ client.on("messageUpdate", (oldMessage, newMessage) => {
   if (newMessage.author?.bot) return;
   if (!newMessage.content) return;
 
-  if (
-    features.logs &&
-    oldMessage.content &&
-    oldMessage.content !== newMessage.content
-  ) {
+  if (features.logs && oldMessage.content && oldMessage.content !== newMessage.content) {
     sendLog(newMessage.guild, {
-      color: Colors.edit,
-      emoji: "✏️",
-      title: "Message Edited",
+      color: Colors.edit, emoji: "✏️", title: "Message Edited",
       fields: [
-        {
-          name: "User",
-          value: `${newMessage.author} (${newMessage.author.tag})`,
-          inline: true,
-        },
+        { name: "User",    value: `${newMessage.author} (${newMessage.author.tag})`, inline: true },
         { name: "Channel", value: `${newMessage.channel}`, inline: true },
-        {
-          name: "Before",
-          value: `\`\`\`${(oldMessage.content || "(empty)").slice(
-            0,
-            300
-          )}\`\`\``,
-        },
-        {
-          name: "After",
-          value: `\`\`\`${newMessage.content.slice(0, 300)}\`\`\``,
-        },
-        { name: "Jump", value: `[Go to message](${newMessage.url})` },
-        { name: "Time", value: timestamp(), inline: true },
+        { name: "Before",  value: `\`\`\`${(oldMessage.content || "(empty)").slice(0, 300)}\`\`\`` },
+        { name: "After",   value: `\`\`\`${newMessage.content.slice(0, 300)}\`\`\`` },
+        { name: "Jump",    value: `[Go to message](${newMessage.url})` },
+        { name: "Time",    value: timestamp(), inline: true },
       ],
     });
   }
@@ -945,33 +548,19 @@ client.on("messageUpdate", (oldMessage, newMessage) => {
   const content = newMessage.content.toLowerCase();
   const allContent = content + " " + getForwardedContent(newMessage);
   const normalized = normalize(allContent);
-  if (
-    badWords.some((w) => normalized.includes(w)) ||
-    emojiWords.some((e) => allContent.includes(e))
-  ) {
+  if (badWords.some((w) => normalized.includes(w)) || emojiWords.some((e) => allContent.includes(e))) {
     newMessage.delete().catch(() => {});
     newMessage.channel
-      .send(
-        `${newMessage.author}, fe9t bik ta3mel fi edit , arka7 takel ban rak .`
-      )
+      .send(`${newMessage.author}, fe9t bik ta3mel fi edit , arka7 takel ban rak .`)
       .then((msg) => setTimeout(() => msg.delete(), 5000));
     if (features.logs) {
       sendLog(newMessage.guild, {
-        color: Colors.badword,
-        emoji: "🤬",
-        title: "Bad Word in Edit — Deleted",
+        color: Colors.badword, emoji: "🤬", title: "Bad Word in Edit — Deleted",
         fields: [
-          {
-            name: "User",
-            value: `${newMessage.author} (${newMessage.author.tag})`,
-            inline: true,
-          },
-          { name: "Channel", value: `${newMessage.channel}`, inline: true },
-          {
-            name: "Edited Content",
-            value: `\`\`\`${newMessage.content.slice(0, 300)}\`\`\``,
-          },
-          { name: "Time", value: timestamp(), inline: true },
+          { name: "User",           value: `${newMessage.author} (${newMessage.author.tag})`, inline: true },
+          { name: "Channel",        value: `${newMessage.channel}`, inline: true },
+          { name: "Edited Content", value: `\`\`\`${newMessage.content.slice(0, 300)}\`\`\`` },
+          { name: "Time",           value: timestamp(), inline: true },
         ],
         footer: "Message deleted automatically",
       });
@@ -987,39 +576,20 @@ client.on("messageDelete", async (message) => {
   await new Promise((r) => setTimeout(r, 1000));
   let deletedBy = "Self-deleted or unknown";
   try {
-    const auditLogs = await message.guild.fetchAuditLogs({
-      type: AuditLogEvent.MessageDelete,
-      limit: 1,
-    });
+    const auditLogs = await message.guild.fetchAuditLogs({ type: AuditLogEvent.MessageDelete, limit: 1 });
     const entry = auditLogs.entries.first();
-    if (
-      entry &&
-      entry.target?.id === message.author?.id &&
-      Date.now() - entry.createdTimestamp < 5000
-    ) {
+    if (entry && entry.target?.id === message.author?.id && Date.now() - entry.createdTimestamp < 5000) {
       deletedBy = `${entry.executor} (${entry.executor.tag})`;
     }
   } catch {}
   sendLog(message.guild, {
-    color: Colors.delete,
-    emoji: "🗑️",
-    title: "Message Deleted",
+    color: Colors.delete, emoji: "🗑️", title: "Message Deleted",
     fields: [
-      {
-        name: "Author",
-        value: `${message.author} (${message.author?.tag || "?"})`,
-        inline: true,
-      },
-      { name: "Channel", value: `${message.channel}`, inline: true },
+      { name: "Author",     value: `${message.author} (${message.author?.tag || "?"})`, inline: true },
+      { name: "Channel",    value: `${message.channel}`, inline: true },
       { name: "Deleted By", value: deletedBy, inline: true },
-      {
-        name: "Content",
-        value: `\`\`\`${(message.content || "(no text / attachment)").slice(
-          0,
-          300
-        )}\`\`\``,
-      },
-      { name: "Time", value: timestamp(), inline: true },
+      { name: "Content",    value: `\`\`\`${(message.content || "(no text / attachment)").slice(0, 300)}\`\`\`` },
+      { name: "Time",       value: timestamp(), inline: true },
     ],
   });
 });
@@ -1028,44 +598,35 @@ client.on("messageDelete", async (message) => {
 
 client.on("guildMemberAdd", (member) => {
   if (features.welcome) {
-    const channel = member.guild.channels.cache.find(
-      (ch) => ch.name === "☕・𝗳𝗶𝗿𝘀𝘁-𝘀𝗶𝗽-𝘄𝗲𝗹𝗰𝗼𝗺𝗲"
-    );
+    const channel = member.guild.channels.cache.find((ch) => ch.name === "☕・𝗳𝗶𝗿𝘀𝘁-𝘀𝗶𝗽-𝘄𝗲𝗹𝗰𝗼𝗺𝗲");
     if (channel) {
       channel.send(
         `☕ 🇹🇳 𝐖𝐞𝐥𝐜𝐨𝐦𝐞 𝐭𝐨 𝐂𝐨𝐟𝐟𝐞𝐞 𝐁𝐞𝐚𝐧\n\n` +
-          `𝐀𝐡𝐥𝐚 𝐰 𝐬𝐚𝐡𝐥𝐚 ${member.user.username}! 👋\n` +
-          `𝐓𝐟𝐚𝟒𝐞𝐥, 𝟕𝐚𝟒𝐞𝐫 𝟗𝐚𝐡𝐰𝐭𝐞𝐤 𝐰 𝐞𝐫𝐤𝐞𝐜𝐡 𝐦𝟑𝐚𝐧𝐚 ☕\n\n` +
-          `💬  𝐂𝐡𝐚𝐭𝐭𝐢𝐧𝐠 ・ 🎮 𝐆𝐚𝐦𝐢𝐧𝐠 ・ 🎵 𝐂𝐡𝐢𝐥𝐥\n` +
-          `𝐡𝐧𝐚 𝐤𝐨𝐥 𝐜𝐡𝐚𝐲 𝐚𝟕𝐥𝐚 𝐦𝟑𝐚 𝐂𝐨𝐟𝐟𝐞𝐞 😏\n\n` +
-          `📜 𝐚𝟗𝐫𝐚 𝐞𝐥 𝐫𝐮𝐥𝐞𝐬 𝐰 𝐞𝐧𝐣𝐨𝐲 𝐲𝐨𝐮𝐫 𝐬𝐭𝐚𝐲!`
+        `𝐀𝐡𝐥𝐚 𝐰 𝐬𝐚𝐡𝐥𝐚 ${member.user.username}! 👋\n` +
+        `𝐓𝐟𝐚𝟒𝐞𝐥, 𝟕𝐚𝟒𝐞𝐫 𝟗𝐚𝐡𝐰𝐭𝐞𝐤 𝐰 𝐞𝐫𝐤𝐞𝐜𝐡 𝐦𝟑𝐚𝐧𝐚 ☕\n\n` +
+        `💬  𝐂𝐡𝐚𝐭𝐭𝐢𝐧𝐠 ・ 🎮 𝐆𝐚𝐦𝐢𝐧𝐠 ・ 🎵 𝐂𝐡𝐢𝐥𝐥\n` +
+        `𝐡𝐧𝐚 𝐤𝐨𝐥 𝐜𝐡𝐚𝐲 𝐚𝟕𝐥𝐚 𝐦𝟑𝐚 𝐂𝐨𝐟𝐟𝐞𝐞 😏\n\n` +
+        `📜 𝐚𝟗𝐫𝐚 𝐞𝐥 𝐫𝐮𝐥𝐞𝐬 𝐰 𝐞𝐧𝐣𝐨𝐲 𝐲𝐨𝐮𝐫 𝐬𝐭𝐚𝐲!`
       );
     }
-    const role = member.guild.roles.cache.find((r) => r.name === "member");
-    if (role) member.roles.add(role).catch((err) => console.error(err));
+
+    // ✅ Using role ID — reliable, never breaks on emoji/name mismatches
+    const role = member.guild.roles.cache.get(AUTOROLE_ID);
+    if (role) {
+      member.roles.add(role).catch((err) => console.error("Failed to add auto-role:", err));
+    } else {
+      console.warn(`⚠️  Auto-role not found! Make sure AUTOROLE_ID is set correctly at the top of bot.js`);
+    }
   }
+
   if (features.logs) {
     sendLog(member.guild, {
-      color: Colors.join,
-      emoji: "📥",
-      title: "Member Joined",
+      color: Colors.join, emoji: "📥", title: "Member Joined",
       fields: [
-        {
-          name: "User",
-          value: `${member.user} (${member.user.tag})`,
-          inline: true,
-        },
-        {
-          name: "Account Age",
-          value: `<t:${Math.floor(member.user.createdTimestamp / 1000)}:R>`,
-          inline: true,
-        },
-        {
-          name: "Member #",
-          value: `${member.guild.memberCount}`,
-          inline: true,
-        },
-        { name: "Time", value: timestamp(), inline: true },
+        { name: "User",        value: `${member.user} (${member.user.tag})`, inline: true },
+        { name: "Account Age", value: `<t:${Math.floor(member.user.createdTimestamp / 1000)}:R>`, inline: true },
+        { name: "Member #",    value: `${member.guild.memberCount}`, inline: true },
+        { name: "Time",        value: timestamp(), inline: true },
       ],
     });
   }
@@ -1079,16 +640,9 @@ client.on("guildMemberRemove", async (member) => {
   let reason = "Left the server";
   let actionBy = null;
   try {
-    const kickLogs = await member.guild.fetchAuditLogs({
-      type: AuditLogEvent.MemberKick,
-      limit: 1,
-    });
+    const kickLogs = await member.guild.fetchAuditLogs({ type: AuditLogEvent.MemberKick, limit: 1 });
     const entry = kickLogs.entries.first();
-    if (
-      entry &&
-      entry.target?.id === member.id &&
-      Date.now() - entry.createdTimestamp < 5000
-    ) {
+    if (entry && entry.target?.id === member.id && Date.now() - entry.createdTimestamp < 5000) {
       reason = `Kicked — ${entry.reason || "no reason given"}`;
       actionBy = entry.executor;
     }
@@ -1098,16 +652,10 @@ client.on("guildMemberRemove", async (member) => {
     emoji: actionBy ? "👢" : "📤",
     title: actionBy ? "Member Kicked" : "Member Left",
     fields: [
-      {
-        name: "User",
-        value: `${member.user.tag} (ID: ${member.user.id})`,
-        inline: true,
-      },
+      { name: "User",   value: `${member.user.tag} (ID: ${member.user.id})`, inline: true },
       { name: "Reason", value: reason, inline: true },
-      ...(actionBy
-        ? [{ name: "By", value: `${actionBy} (${actionBy.tag})`, inline: true }]
-        : []),
-      { name: "Time", value: timestamp(), inline: true },
+      ...(actionBy ? [{ name: "By", value: `${actionBy} (${actionBy.tag})`, inline: true }] : []),
+      { name: "Time",   value: timestamp(), inline: true },
     ],
   });
 });
@@ -1121,44 +669,27 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
   const newNick = newMember.nickname || newMember.user.username;
   if (oldNick !== newNick) {
     sendLog(newMember.guild, {
-      color: Colors.rename,
-      emoji: "📝",
-      title: "Nickname Changed",
+      color: Colors.rename, emoji: "📝", title: "Nickname Changed",
       fields: [
-        {
-          name: "User",
-          value: `${newMember.user} (${newMember.user.tag})`,
-          inline: true,
-        },
+        { name: "User",   value: `${newMember.user} (${newMember.user.tag})`, inline: true },
         { name: "Before", value: oldNick, inline: true },
-        { name: "After", value: newNick, inline: true },
-        { name: "Time", value: timestamp(), inline: true },
+        { name: "After",  value: newNick, inline: true },
+        { name: "Time",   value: timestamp(), inline: true },
       ],
     });
   }
 
-  const wasTimedOut =
-    !oldMember.communicationDisabledUntil &&
-    newMember.communicationDisabledUntil;
-  const unTimedOut =
-    oldMember.communicationDisabledUntil &&
-    !newMember.communicationDisabledUntil;
+  const wasTimedOut = !oldMember.communicationDisabledUntil && newMember.communicationDisabledUntil;
+  const unTimedOut  = oldMember.communicationDisabledUntil && !newMember.communicationDisabledUntil;
   if (!wasTimedOut && !unTimedOut) return;
 
   await new Promise((r) => setTimeout(r, 1000));
   let executor = "Unknown";
   let muteReason = "No reason given";
   try {
-    const auditLogs = await newMember.guild.fetchAuditLogs({
-      type: AuditLogEvent.MemberUpdate,
-      limit: 1,
-    });
+    const auditLogs = await newMember.guild.fetchAuditLogs({ type: AuditLogEvent.MemberUpdate, limit: 1 });
     const entry = auditLogs.entries.first();
-    if (
-      entry &&
-      entry.target?.id === newMember.id &&
-      Date.now() - entry.createdTimestamp < 5000
-    ) {
+    if (entry && entry.target?.id === newMember.id && Date.now() - entry.createdTimestamp < 5000) {
       executor = `${entry.executor} (${entry.executor.tag})`;
       muteReason = entry.reason || muteReason;
     }
@@ -1166,40 +697,22 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
 
   if (wasTimedOut) {
     sendLog(newMember.guild, {
-      color: Colors.mute,
-      emoji: "🔇",
-      title: "Member Timed Out (Muted)",
+      color: Colors.mute, emoji: "🔇", title: "Member Timed Out (Muted)",
       fields: [
-        {
-          name: "User",
-          value: `${newMember.user} (${newMember.user.tag})`,
-          inline: true,
-        },
+        { name: "User",     value: `${newMember.user} (${newMember.user.tag})`, inline: true },
         { name: "Muted By", value: executor, inline: true },
-        {
-          name: "Until",
-          value: `<t:${Math.floor(
-            newMember.communicationDisabledUntil / 1000
-          )}:F>`,
-          inline: true,
-        },
-        { name: "Reason", value: muteReason },
-        { name: "Time", value: timestamp(), inline: true },
+        { name: "Until",    value: `<t:${Math.floor(newMember.communicationDisabledUntil / 1000)}:F>`, inline: true },
+        { name: "Reason",   value: muteReason },
+        { name: "Time",     value: timestamp(), inline: true },
       ],
     });
   } else {
     sendLog(newMember.guild, {
-      color: Colors.join,
-      emoji: "🔊",
-      title: "Member Timeout Removed",
+      color: Colors.join, emoji: "🔊", title: "Member Timeout Removed",
       fields: [
-        {
-          name: "User",
-          value: `${newMember.user} (${newMember.user.tag})`,
-          inline: true,
-        },
+        { name: "User",       value: `${newMember.user} (${newMember.user.tag})`, inline: true },
         { name: "Removed By", value: executor, inline: true },
-        { name: "Time", value: timestamp(), inline: true },
+        { name: "Time",       value: timestamp(), inline: true },
       ],
     });
   }
@@ -1213,33 +726,20 @@ client.on("guildBanAdd", async (ban) => {
   let executor = "Unknown";
   let reason = ban.reason || "No reason given";
   try {
-    const auditLogs = await ban.guild.fetchAuditLogs({
-      type: AuditLogEvent.MemberBanAdd,
-      limit: 1,
-    });
+    const auditLogs = await ban.guild.fetchAuditLogs({ type: AuditLogEvent.MemberBanAdd, limit: 1 });
     const entry = auditLogs.entries.first();
-    if (
-      entry &&
-      entry.target?.id === ban.user.id &&
-      Date.now() - entry.createdTimestamp < 5000
-    ) {
+    if (entry && entry.target?.id === ban.user.id && Date.now() - entry.createdTimestamp < 5000) {
       executor = `${entry.executor} (${entry.executor.tag})`;
       reason = entry.reason || reason;
     }
   } catch {}
   sendLog(ban.guild, {
-    color: Colors.ban,
-    emoji: "🔨",
-    title: "Member Banned",
+    color: Colors.ban, emoji: "🔨", title: "Member Banned",
     fields: [
-      {
-        name: "User",
-        value: `${ban.user.tag} (ID: ${ban.user.id})`,
-        inline: true,
-      },
+      { name: "User",      value: `${ban.user.tag} (ID: ${ban.user.id})`, inline: true },
       { name: "Banned By", value: executor, inline: true },
-      { name: "Reason", value: reason },
-      { name: "Time", value: timestamp(), inline: true },
+      { name: "Reason",    value: reason },
+      { name: "Time",      value: timestamp(), inline: true },
     ],
   });
 });
@@ -1251,37 +751,22 @@ client.on("guildBanRemove", async (ban) => {
   await new Promise((r) => setTimeout(r, 1000));
   let executor = "Unknown";
   try {
-    const auditLogs = await ban.guild.fetchAuditLogs({
-      type: AuditLogEvent.MemberBanRemove,
-      limit: 1,
-    });
+    const auditLogs = await ban.guild.fetchAuditLogs({ type: AuditLogEvent.MemberBanRemove, limit: 1 });
     const entry = auditLogs.entries.first();
-    if (
-      entry &&
-      entry.target?.id === ban.user.id &&
-      Date.now() - entry.createdTimestamp < 5000
-    ) {
+    if (entry && entry.target?.id === ban.user.id && Date.now() - entry.createdTimestamp < 5000) {
       executor = `${entry.executor} (${entry.executor.tag})`;
     }
   } catch {}
   sendLog(ban.guild, {
-    color: Colors.join,
-    emoji: "✅",
-    title: "Member Unbanned",
+    color: Colors.join, emoji: "✅", title: "Member Unbanned",
     fields: [
-      {
-        name: "User",
-        value: `${ban.user.tag} (ID: ${ban.user.id})`,
-        inline: true,
-      },
+      { name: "User",        value: `${ban.user.tag} (ID: ${ban.user.id})`, inline: true },
       { name: "Unbanned By", value: executor, inline: true },
-      { name: "Time", value: timestamp(), inline: true },
+      { name: "Time",        value: timestamp(), inline: true },
     ],
   });
 });
 
 // ─── Login ────────────────────────────────────────────────────────────────────
 
-client
-  .login(process.env.TOKEN)
-  .catch((err) => console.error("Login error:", err));
+client.login(process.env.TOKEN).catch((err) => console.error("Login error:", err));
